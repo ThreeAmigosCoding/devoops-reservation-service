@@ -25,6 +25,7 @@ dependencies {
     implementation("net.logstash.logback:logstash-logback-encoder:8.0")
 	implementation("org.flywaydb:flyway-database-postgresql")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    implementation("io.micrometer:micrometer-registry-prometheus")
     //zipkin(tracing)
     implementation("org.springframework.boot:spring-boot-micrometer-tracing-brave")
     implementation("org.springframework.boot:spring-boot-starter-zipkin")
