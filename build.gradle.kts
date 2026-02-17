@@ -1,8 +1,11 @@
+import com.google.protobuf.gradle.*
+
 plugins {
 	java
 	jacoco
 	id("org.springframework.boot") version "4.0.1"
 	id("io.spring.dependency-management") version "1.1.7"
+	id("com.google.protobuf") version "0.9.4"
 }
 
 group = "com.devoops"
@@ -18,6 +21,8 @@ java {
 repositories {
 	mavenCentral()
 }
+
+val grpcVersion = "1.68.0"
 
 dependencies {
 	// Web and Core
@@ -39,6 +44,13 @@ dependencies {
 	implementation("org.mapstruct:mapstruct:1.6.3")
 	annotationProcessor("org.mapstruct:mapstruct-processor:1.6.3")
 	annotationProcessor("org.projectlombok:lombok-mapstruct-binding:0.2.0")
+
+	// gRPC Server
+	implementation("net.devh:grpc-server-spring-boot-starter:3.1.0.RELEASE")
+	implementation("io.grpc:grpc-protobuf:$grpcVersion")
+	implementation("io.grpc:grpc-stub:$grpcVersion")
+	implementation("io.grpc:grpc-netty-shaded:$grpcVersion")
+	compileOnly("javax.annotation:javax.annotation-api:1.3.2")
 
 	// Prometheus
 	implementation("io.micrometer:micrometer-registry-prometheus")
@@ -62,6 +74,24 @@ dependencies {
 	testCompileOnly("org.projectlombok:lombok")
 	testAnnotationProcessor("org.projectlombok:lombok")
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+protobuf {
+	protoc {
+		artifact = "com.google.protobuf:protoc:3.25.5"
+	}
+	plugins {
+		id("grpc") {
+			artifact = "io.grpc:protoc-gen-grpc-java:$grpcVersion"
+		}
+	}
+	generateProtoTasks {
+		all().forEach { task ->
+			task.plugins {
+				id("grpc")
+			}
+		}
+	}
 }
 
 tasks.withType<Test> {
