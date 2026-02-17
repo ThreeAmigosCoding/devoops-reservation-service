@@ -5,14 +5,12 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 public record ReservationCreatedMessage(
-        UUID reservationId,
-        UUID accommodationId,
-        UUID guestId,
-        UUID hostId,
-        LocalDate startDate,
-        LocalDate endDate,
-        int guestCount,
-        BigDecimal totalPrice,
-        String status
+        UUID userId,
+        String userEmail,
+        String guestName,
+        String accommodationName,
+        LocalDate checkIn,
+        LocalDate checkOut,
+        BigDecimal totalPrice
 ) {
 }

@@ -46,6 +46,7 @@ public class AccommodationGrpcClient {
                     null,
                     null,
                     null,
+                    null,
                     null
             );
         }
@@ -57,7 +58,8 @@ public class AccommodationGrpcClient {
                 UUID.fromString(response.getHostId()),
                 new BigDecimal(response.getTotalPrice()),
                 response.getPricingMode(),
-                response.getApprovalMode()
+                response.getApprovalMode(),
+                response.getAccommodationName()
         );
     }
 }

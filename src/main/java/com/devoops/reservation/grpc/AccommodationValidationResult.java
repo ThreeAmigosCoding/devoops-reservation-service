@@ -10,7 +10,8 @@ public record AccommodationValidationResult(
         UUID hostId,
         BigDecimal totalPrice,
         String pricingMode,
-        String approvalMode
+        String approvalMode,
+        String accommodationName
 ) {
     public boolean isAutoApproval() {
         return "AUTOMATIC".equals(approvalMode);

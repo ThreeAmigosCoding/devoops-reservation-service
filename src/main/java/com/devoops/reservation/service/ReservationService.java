@@ -85,7 +85,7 @@ public class ReservationService {
         log.info("Created reservation {} for guest {} at accommodation {}",
                 reservation.getId(), userContext.userId(), request.accommodationId());
 
-        eventPublisher.publishReservationCreated(reservation);
+        eventPublisher.publishReservationCreated(reservation, validationResult.accommodationName());
 
         return reservationMapper.toResponse(reservation);
     }
@@ -160,7 +160,16 @@ public class ReservationService {
         reservationRepository.save(reservation);
         log.info("Guest {} cancelled reservation {}", userContext.userId(), id);
 
-        eventPublisher.publishReservationCancelled(reservation);
+        // Fetch accommodation name for notification
+        AccommodationValidationResult accommodationInfo = accommodationGrpcClient.validateAndCalculatePrice(
+                reservation.getAccommodationId(),
+                reservation.getStartDate(),
+                reservation.getEndDate(),
+                reservation.getGuestCount()
+        );
+        String accommodationName = accommodationInfo.valid() ? accommodationInfo.accommodationName() : "Unknown Accommodation";
+
+        eventPublisher.publishReservationCancelled(reservation, accommodationName);
     }
 
     // === Helper Methods ===
