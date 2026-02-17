@@ -102,7 +102,7 @@ class ReservationServiceTest {
             var reservation = createReservation();
             var response = createResponse();
             var validationResult = new AccommodationValidationResult(
-                    true, null, null, HOST_ID, new BigDecimal("1000.00"), "PER_UNIT", "MANUAL"
+                    true, null, null, HOST_ID, new BigDecimal("1000.00"), "PER_UNIT", "MANUAL", "Test Accommodation"
             );
 
             when(accommodationGrpcClient.validateAndCalculatePrice(any(), any(), any(), anyInt()))
@@ -119,7 +119,7 @@ class ReservationServiceTest {
             assertThat(reservation.getGuestId()).isEqualTo(GUEST_ID);
             assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.PENDING);
             verify(reservationRepository).saveAndFlush(reservation);
-            verify(eventPublisher).publishReservationCreated(reservation);
+            verify(eventPublisher).publishReservationCreated(reservation, "Test Accommodation");
         }
 
         @Test
@@ -129,7 +129,7 @@ class ReservationServiceTest {
             var existingReservation = createReservation();
             existingReservation.setStatus(ReservationStatus.APPROVED);
             var validationResult = new AccommodationValidationResult(
-                    true, null, null, HOST_ID, new BigDecimal("1000.00"), "PER_UNIT", "MANUAL"
+                    true, null, null, HOST_ID, new BigDecimal("1000.00"), "PER_UNIT", "MANUAL", "Test Accommodation"
             );
 
             when(accommodationGrpcClient.validateAndCalculatePrice(any(), any(), any(), anyInt()))
@@ -149,7 +149,7 @@ class ReservationServiceTest {
             var reservation = createReservation();
             var response = createResponse();
             var validationResult = new AccommodationValidationResult(
-                    true, null, null, HOST_ID, new BigDecimal("1000.00"), "PER_UNIT", "AUTOMATIC"
+                    true, null, null, HOST_ID, new BigDecimal("1000.00"), "PER_UNIT", "AUTOMATIC", "Test Accommodation"
             );
 
             when(accommodationGrpcClient.validateAndCalculatePrice(any(), any(), any(), anyInt()))
@@ -171,7 +171,7 @@ class ReservationServiceTest {
         void create_WithAccommodationNotFound_ThrowsAccommodationNotFoundException() {
             var request = createRequest();
             var validationResult = new AccommodationValidationResult(
-                    false, "ACCOMMODATION_NOT_FOUND", "Accommodation not found", null, null, null, null
+                    false, "ACCOMMODATION_NOT_FOUND", "Accommodation not found", null, null, null, null, null
             );
 
             when(accommodationGrpcClient.validateAndCalculatePrice(any(), any(), any(), anyInt()))
@@ -187,7 +187,7 @@ class ReservationServiceTest {
         void create_WithInvalidGuestCount_ThrowsInvalidReservationException() {
             var request = createRequest();
             var validationResult = new AccommodationValidationResult(
-                    false, "GUEST_COUNT_INVALID", "Guest count must be between 1 and 4", null, null, null, null
+                    false, "GUEST_COUNT_INVALID", "Guest count must be between 1 and 4", null, null, null, null, null
             );
 
             when(accommodationGrpcClient.validateAndCalculatePrice(any(), any(), any(), anyInt()))
@@ -420,14 +420,19 @@ class ReservationServiceTest {
             var reservation = createReservation();
             reservation.setStatus(ReservationStatus.APPROVED);
             reservation.setStartDate(LocalDate.now().plusDays(10));
+            var accommodationResult = new AccommodationValidationResult(
+                    true, null, null, HOST_ID, new BigDecimal("1000.00"), "PER_UNIT", "MANUAL", "Test Accommodation"
+            );
 
             when(reservationRepository.findById(RESERVATION_ID)).thenReturn(Optional.of(reservation));
+            when(accommodationGrpcClient.validateAndCalculatePrice(any(), any(), any(), anyInt()))
+                    .thenReturn(accommodationResult);
 
             reservationService.cancelReservation(RESERVATION_ID, GUEST_CONTEXT);
 
             assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.CANCELLED);
             verify(reservationRepository).save(reservation);
-            verify(eventPublisher).publishReservationCancelled(reservation);
+            verify(eventPublisher).publishReservationCancelled(reservation, "Test Accommodation");
         }
 
         @Test

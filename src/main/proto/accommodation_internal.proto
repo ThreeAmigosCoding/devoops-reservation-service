@@ -23,4 +23,5 @@ message ReservationValidationResponse {
   string total_price = 5;
   string pricing_mode = 6;
   string approval_mode = 7;
+  string accommodation_name = 8;
 }

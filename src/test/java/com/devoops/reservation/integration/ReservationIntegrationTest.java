@@ -1,6 +1,11 @@
 package com.devoops.reservation.integration;
 
+import com.devoops.reservation.grpc.AccommodationGrpcClient;
+import com.devoops.reservation.grpc.AccommodationValidationResult;
+import com.devoops.reservation.grpc.UserGrpcClient;
+import com.devoops.reservation.grpc.UserSummaryResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -9,15 +14,21 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Map;
 import java.util.UUID;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.when;
 
 import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -39,6 +50,15 @@ class ReservationIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @MockitoBean
+    private AccommodationGrpcClient accommodationGrpcClient;
+
+    @MockitoBean
+    private UserGrpcClient userGrpcClient;
+
+    @MockitoBean
+    private RabbitTemplate rabbitTemplate;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private static String reservationId;
@@ -48,6 +68,33 @@ class ReservationIntegrationTest {
     private static final UUID ACCOMMODATION_ID = UUID.randomUUID();
 
     private static final String BASE_PATH = "/api/reservation";
+
+    @BeforeEach
+    void setUpMocks() {
+        AccommodationValidationResult validResult = new AccommodationValidationResult(
+                true,
+                null,
+                null,
+                HOST_ID,
+                new BigDecimal("500.00"),
+                "PER_ACCOMMODATION",
+                "MANUAL",
+                "Test Accommodation"
+        );
+        when(accommodationGrpcClient.validateAndCalculatePrice(any(UUID.class), any(LocalDate.class), any(LocalDate.class), anyInt()))
+                .thenReturn(validResult);
+
+        UserSummaryResult hostSummary = new UserSummaryResult(
+                true,
+                HOST_ID,
+                "host@example.com",
+                "Test",
+                "Host",
+                "HOST"
+        );
+        when(userGrpcClient.getUserSummary(any(UUID.class)))
+                .thenReturn(hostSummary);
+    }
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
