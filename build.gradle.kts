@@ -29,6 +29,8 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-webmvc")
 	implementation("org.springframework.boot:spring-boot-starter-actuator")
 	implementation("org.springframework.boot:spring-boot-starter-validation")
+	implementation("org.springframework.boot:spring-boot-starter-amqp")
+	implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
 
 	// Database
 	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
@@ -45,8 +47,9 @@ dependencies {
 	annotationProcessor("org.mapstruct:mapstruct-processor:1.6.3")
 	annotationProcessor("org.projectlombok:lombok-mapstruct-binding:0.2.0")
 
-	// gRPC Server
+	// gRPC Server and Client
 	implementation("net.devh:grpc-server-spring-boot-starter:3.1.0.RELEASE")
+	implementation("net.devh:grpc-client-spring-boot-starter:3.1.0.RELEASE")
 	implementation("io.grpc:grpc-protobuf:$grpcVersion")
 	implementation("io.grpc:grpc-stub:$grpcVersion")
 	implementation("io.grpc:grpc-netty-shaded:$grpcVersion")

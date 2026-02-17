@@ -344,4 +344,78 @@ class ReservationControllerTest {
                     .andExpect(status().isForbidden());
         }
     }
+
+    @Nested
+    @DisplayName("POST /api/reservation/{id}/cancel")
+    class CancelEndpoint {
+
+        @Test
+        @DisplayName("With valid request returns 204")
+        void cancel_WithValidRequest_Returns204() throws Exception {
+            doNothing().when(reservationService).cancelReservation(eq(RESERVATION_ID), any(UserContext.class));
+
+            mockMvc.perform(post("/api/reservation/{id}/cancel", RESERVATION_ID)
+                            .header("X-User-Id", GUEST_ID.toString())
+                            .header("X-User-Role", "GUEST"))
+                    .andExpect(status().isNoContent());
+        }
+
+        @Test
+        @DisplayName("With non-existing ID returns 404")
+        void cancel_WithNonExistingId_Returns404() throws Exception {
+            UUID id = UUID.randomUUID();
+            doThrow(new ReservationNotFoundException("Not found"))
+                    .when(reservationService).cancelReservation(eq(id), any(UserContext.class));
+
+            mockMvc.perform(post("/api/reservation/{id}/cancel", id)
+                            .header("X-User-Id", GUEST_ID.toString())
+                            .header("X-User-Role", "GUEST"))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("With wrong owner returns 403")
+        void cancel_WithWrongOwner_Returns403() throws Exception {
+            doThrow(new ForbiddenException("Not the owner"))
+                    .when(reservationService).cancelReservation(eq(RESERVATION_ID), any(UserContext.class));
+
+            mockMvc.perform(post("/api/reservation/{id}/cancel", RESERVATION_ID)
+                            .header("X-User-Id", UUID.randomUUID().toString())
+                            .header("X-User-Role", "GUEST"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("With non-approved status returns 400")
+        void cancel_WithNonApprovedStatus_Returns400() throws Exception {
+            doThrow(new InvalidReservationException("Only approved reservations can be cancelled"))
+                    .when(reservationService).cancelReservation(eq(RESERVATION_ID), any(UserContext.class));
+
+            mockMvc.perform(post("/api/reservation/{id}/cancel", RESERVATION_ID)
+                            .header("X-User-Id", GUEST_ID.toString())
+                            .header("X-User-Role", "GUEST"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("With less than 1 day before start returns 400")
+        void cancel_WithTooLate_Returns400() throws Exception {
+            doThrow(new InvalidReservationException("at least 1 day before"))
+                    .when(reservationService).cancelReservation(eq(RESERVATION_ID), any(UserContext.class));
+
+            mockMvc.perform(post("/api/reservation/{id}/cancel", RESERVATION_ID)
+                            .header("X-User-Id", GUEST_ID.toString())
+                            .header("X-User-Role", "GUEST"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("With HOST role returns 403")
+        void cancel_WithHostRole_Returns403() throws Exception {
+            mockMvc.perform(post("/api/reservation/{id}/cancel", RESERVATION_ID)
+                            .header("X-User-Id", HOST_ID.toString())
+                            .header("X-User-Role", "HOST"))
+                    .andExpect(status().isForbidden());
+        }
+    }
 }

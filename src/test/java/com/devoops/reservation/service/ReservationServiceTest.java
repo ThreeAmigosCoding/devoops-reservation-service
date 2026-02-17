@@ -5,9 +5,12 @@ import com.devoops.reservation.dto.request.CreateReservationRequest;
 import com.devoops.reservation.dto.response.ReservationResponse;
 import com.devoops.reservation.entity.Reservation;
 import com.devoops.reservation.entity.ReservationStatus;
+import com.devoops.reservation.exception.AccommodationNotFoundException;
 import com.devoops.reservation.exception.ForbiddenException;
 import com.devoops.reservation.exception.InvalidReservationException;
 import com.devoops.reservation.exception.ReservationNotFoundException;
+import com.devoops.reservation.grpc.AccommodationGrpcClient;
+import com.devoops.reservation.grpc.AccommodationValidationResult;
 import com.devoops.reservation.mapper.ReservationMapper;
 import com.devoops.reservation.repository.ReservationRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -28,6 +31,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -38,6 +42,12 @@ class ReservationServiceTest {
 
     @Mock
     private ReservationMapper reservationMapper;
+
+    @Mock
+    private AccommodationGrpcClient accommodationGrpcClient;
+
+    @Mock
+    private ReservationEventPublisherService eventPublisher;
 
     @InjectMocks
     private ReservationService reservationService;
@@ -91,7 +101,12 @@ class ReservationServiceTest {
             var request = createRequest();
             var reservation = createReservation();
             var response = createResponse();
+            var validationResult = new AccommodationValidationResult(
+                    true, null, null, HOST_ID, new BigDecimal("1000.00"), "PER_UNIT", "MANUAL"
+            );
 
+            when(accommodationGrpcClient.validateAndCalculatePrice(any(), any(), any(), anyInt()))
+                    .thenReturn(validationResult);
             when(reservationRepository.findOverlappingApproved(any(), any(), any()))
                     .thenReturn(List.of());
             when(reservationMapper.toEntity(request)).thenReturn(reservation);
@@ -104,6 +119,7 @@ class ReservationServiceTest {
             assertThat(reservation.getGuestId()).isEqualTo(GUEST_ID);
             assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.PENDING);
             verify(reservationRepository).saveAndFlush(reservation);
+            verify(eventPublisher).publishReservationCreated(reservation);
         }
 
         @Test
@@ -112,13 +128,74 @@ class ReservationServiceTest {
             var request = createRequest();
             var existingReservation = createReservation();
             existingReservation.setStatus(ReservationStatus.APPROVED);
+            var validationResult = new AccommodationValidationResult(
+                    true, null, null, HOST_ID, new BigDecimal("1000.00"), "PER_UNIT", "MANUAL"
+            );
 
+            when(accommodationGrpcClient.validateAndCalculatePrice(any(), any(), any(), anyInt()))
+                    .thenReturn(validationResult);
             when(reservationRepository.findOverlappingApproved(any(), any(), any()))
                     .thenReturn(List.of(existingReservation));
 
             assertThatThrownBy(() -> reservationService.create(request, GUEST_CONTEXT))
                     .isInstanceOf(InvalidReservationException.class)
                     .hasMessageContaining("overlap");
+        }
+
+        @Test
+        @DisplayName("With auto-approval mode auto-approves reservation")
+        void create_WithAutoApprovalMode_AutoApprovesReservation() {
+            var request = createRequest();
+            var reservation = createReservation();
+            var response = createResponse();
+            var validationResult = new AccommodationValidationResult(
+                    true, null, null, HOST_ID, new BigDecimal("1000.00"), "PER_UNIT", "AUTOMATIC"
+            );
+
+            when(accommodationGrpcClient.validateAndCalculatePrice(any(), any(), any(), anyInt()))
+                    .thenReturn(validationResult);
+            when(reservationRepository.findOverlappingApproved(any(), any(), any()))
+                    .thenReturn(List.of());
+            when(reservationMapper.toEntity(request)).thenReturn(reservation);
+            when(reservationRepository.saveAndFlush(reservation)).thenReturn(reservation);
+            when(reservationMapper.toResponse(reservation)).thenReturn(response);
+
+            reservationService.create(request, GUEST_CONTEXT);
+
+            assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.APPROVED);
+            verify(reservationRepository).saveAndFlush(reservation);
+        }
+
+        @Test
+        @DisplayName("With accommodation not found throws AccommodationNotFoundException")
+        void create_WithAccommodationNotFound_ThrowsAccommodationNotFoundException() {
+            var request = createRequest();
+            var validationResult = new AccommodationValidationResult(
+                    false, "ACCOMMODATION_NOT_FOUND", "Accommodation not found", null, null, null, null
+            );
+
+            when(accommodationGrpcClient.validateAndCalculatePrice(any(), any(), any(), anyInt()))
+                    .thenReturn(validationResult);
+
+            assertThatThrownBy(() -> reservationService.create(request, GUEST_CONTEXT))
+                    .isInstanceOf(AccommodationNotFoundException.class)
+                    .hasMessageContaining("Accommodation not found");
+        }
+
+        @Test
+        @DisplayName("With invalid guest count throws InvalidReservationException")
+        void create_WithInvalidGuestCount_ThrowsInvalidReservationException() {
+            var request = createRequest();
+            var validationResult = new AccommodationValidationResult(
+                    false, "GUEST_COUNT_INVALID", "Guest count must be between 1 and 4", null, null, null, null
+            );
+
+            when(accommodationGrpcClient.validateAndCalculatePrice(any(), any(), any(), anyInt()))
+                    .thenReturn(validationResult);
+
+            assertThatThrownBy(() -> reservationService.create(request, GUEST_CONTEXT))
+                    .isInstanceOf(InvalidReservationException.class)
+                    .hasMessageContaining("Guest count");
         }
 
         @Test
@@ -329,6 +406,90 @@ class ReservationServiceTest {
             when(reservationRepository.findById(RESERVATION_ID)).thenReturn(Optional.of(reservation));
 
             assertThatThrownBy(() -> reservationService.deleteRequest(RESERVATION_ID, HOST_CONTEXT))
+                    .isInstanceOf(ForbiddenException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("CancelReservation")
+    class CancelReservationTests {
+
+        @Test
+        @DisplayName("With valid approved reservation cancels successfully")
+        void cancelReservation_WithValidApproved_CancelsSuccessfully() {
+            var reservation = createReservation();
+            reservation.setStatus(ReservationStatus.APPROVED);
+            reservation.setStartDate(LocalDate.now().plusDays(10));
+
+            when(reservationRepository.findById(RESERVATION_ID)).thenReturn(Optional.of(reservation));
+
+            reservationService.cancelReservation(RESERVATION_ID, GUEST_CONTEXT);
+
+            assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.CANCELLED);
+            verify(reservationRepository).save(reservation);
+            verify(eventPublisher).publishReservationCancelled(reservation);
+        }
+
+        @Test
+        @DisplayName("With wrong owner throws ForbiddenException")
+        void cancelReservation_WithWrongOwner_ThrowsForbiddenException() {
+            var reservation = createReservation();
+            reservation.setStatus(ReservationStatus.APPROVED);
+            var otherUser = new UserContext(UUID.randomUUID(), "GUEST");
+
+            when(reservationRepository.findById(RESERVATION_ID)).thenReturn(Optional.of(reservation));
+
+            assertThatThrownBy(() -> reservationService.cancelReservation(RESERVATION_ID, otherUser))
+                    .isInstanceOf(ForbiddenException.class)
+                    .hasMessageContaining("only cancel your own");
+        }
+
+        @Test
+        @DisplayName("With pending status throws InvalidReservationException")
+        void cancelReservation_WithPendingStatus_ThrowsInvalidReservationException() {
+            var reservation = createReservation();
+            reservation.setStatus(ReservationStatus.PENDING);
+
+            when(reservationRepository.findById(RESERVATION_ID)).thenReturn(Optional.of(reservation));
+
+            assertThatThrownBy(() -> reservationService.cancelReservation(RESERVATION_ID, GUEST_CONTEXT))
+                    .isInstanceOf(InvalidReservationException.class)
+                    .hasMessageContaining("Only approved reservations");
+        }
+
+        @Test
+        @DisplayName("With less than 1 day before start throws InvalidReservationException")
+        void cancelReservation_WithLessThanOneDayBefore_ThrowsInvalidReservationException() {
+            var reservation = createReservation();
+            reservation.setStatus(ReservationStatus.APPROVED);
+            reservation.setStartDate(LocalDate.now());
+
+            when(reservationRepository.findById(RESERVATION_ID)).thenReturn(Optional.of(reservation));
+
+            assertThatThrownBy(() -> reservationService.cancelReservation(RESERVATION_ID, GUEST_CONTEXT))
+                    .isInstanceOf(InvalidReservationException.class)
+                    .hasMessageContaining("at least 1 day before");
+        }
+
+        @Test
+        @DisplayName("With non-existing ID throws ReservationNotFoundException")
+        void cancelReservation_WithNonExistingId_ThrowsReservationNotFoundException() {
+            UUID id = UUID.randomUUID();
+            when(reservationRepository.findById(id)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> reservationService.cancelReservation(id, GUEST_CONTEXT))
+                    .isInstanceOf(ReservationNotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("Host cannot cancel guest's reservation")
+        void cancelReservation_WithHostTryingToCancel_ThrowsForbiddenException() {
+            var reservation = createReservation();
+            reservation.setStatus(ReservationStatus.APPROVED);
+
+            when(reservationRepository.findById(RESERVATION_ID)).thenReturn(Optional.of(reservation));
+
+            assertThatThrownBy(() -> reservationService.cancelReservation(RESERVATION_ID, HOST_CONTEXT))
                     .isInstanceOf(ForbiddenException.class);
         }
     }
