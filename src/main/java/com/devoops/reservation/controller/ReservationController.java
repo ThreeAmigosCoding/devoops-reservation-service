@@ -60,4 +60,13 @@ public class ReservationController {
         reservationService.deleteRequest(id, userContext);
         return ResponseEntity.noContent().build();
     }
+
+    @PostMapping("/{id}/cancel")
+    @RequireRole("GUEST")
+    public ResponseEntity<Void> cancel(
+            @PathVariable UUID id,
+            UserContext userContext) {
+        reservationService.cancelReservation(id, userContext);
+        return ResponseEntity.noContent().build();
+    }
 }

@@ -1,0 +1,26 @@
+syntax = "proto3";
+package accommodation;
+
+option java_multiple_files = true;
+option java_package = "com.devoops.reservation.grpc.proto.accommodation";
+
+service AccommodationInternalService {
+  rpc ValidateAndCalculatePrice(ReservationValidationRequest) returns (ReservationValidationResponse);
+}
+
+message ReservationValidationRequest {
+  string accommodation_id = 1;
+  string start_date = 2;
+  string end_date = 3;
+  int32 guest_count = 4;
+}
+
+message ReservationValidationResponse {
+  bool valid = 1;
+  string error_code = 2;
+  string error_message = 3;
+  string host_id = 4;
+  string total_price = 5;
+  string pricing_mode = 6;
+  string approval_mode = 7;
+}
