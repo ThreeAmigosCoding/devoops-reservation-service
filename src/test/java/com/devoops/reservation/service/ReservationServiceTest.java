@@ -3,6 +3,7 @@ package com.devoops.reservation.service;
 import com.devoops.reservation.config.UserContext;
 import com.devoops.reservation.dto.request.CreateReservationRequest;
 import com.devoops.reservation.dto.response.ReservationResponse;
+import com.devoops.reservation.dto.response.ReservationWithGuestInfoResponse;
 import com.devoops.reservation.entity.Reservation;
 import com.devoops.reservation.entity.ReservationStatus;
 import com.devoops.reservation.exception.AccommodationNotFoundException;
@@ -496,6 +497,204 @@ class ReservationServiceTest {
 
             assertThatThrownBy(() -> reservationService.cancelReservation(RESERVATION_ID, HOST_CONTEXT))
                     .isInstanceOf(ForbiddenException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("ApproveReservation")
+    class ApproveReservationTests {
+
+        @Test
+        @DisplayName("With valid pending reservation approves successfully")
+        void approveReservation_WithValidPending_ApprovesSuccessfully() {
+            var reservation = createReservation();
+            var response = createResponse();
+            var accommodationResult = new AccommodationValidationResult(
+                    true, null, null, HOST_ID, new BigDecimal("1000.00"), "PER_UNIT", "MANUAL", "Test Accommodation"
+            );
+
+            when(reservationRepository.findById(RESERVATION_ID)).thenReturn(Optional.of(reservation));
+            when(reservationRepository.findOverlappingPending(any(), any(), any(), any()))
+                    .thenReturn(List.of());
+            when(accommodationGrpcClient.validateAndCalculatePrice(any(), any(), any(), anyInt()))
+                    .thenReturn(accommodationResult);
+            when(reservationMapper.toResponse(reservation)).thenReturn(response);
+
+            ReservationResponse result = reservationService.approveReservation(RESERVATION_ID, HOST_CONTEXT);
+
+            assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.APPROVED);
+            verify(reservationRepository).save(reservation);
+            verify(eventPublisher).publishReservationResponse(reservation, "Test Accommodation", true);
+        }
+
+        @Test
+        @DisplayName("With overlapping pending reservations auto-rejects them")
+        void approveReservation_WithOverlappingPending_AutoRejectsThem() {
+            var reservation = createReservation();
+            var overlapping1 = Reservation.builder()
+                    .id(UUID.randomUUID())
+                    .accommodationId(ACCOMMODATION_ID)
+                    .guestId(UUID.randomUUID())
+                    .hostId(HOST_ID)
+                    .startDate(LocalDate.now().plusDays(12))
+                    .endDate(LocalDate.now().plusDays(14))
+                    .status(ReservationStatus.PENDING)
+                    .build();
+            var overlapping2 = Reservation.builder()
+                    .id(UUID.randomUUID())
+                    .accommodationId(ACCOMMODATION_ID)
+                    .guestId(UUID.randomUUID())
+                    .hostId(HOST_ID)
+                    .startDate(LocalDate.now().plusDays(11))
+                    .endDate(LocalDate.now().plusDays(13))
+                    .status(ReservationStatus.PENDING)
+                    .build();
+            var accommodationResult = new AccommodationValidationResult(
+                    true, null, null, HOST_ID, new BigDecimal("1000.00"), "PER_UNIT", "MANUAL", "Test Accommodation"
+            );
+
+            when(reservationRepository.findById(RESERVATION_ID)).thenReturn(Optional.of(reservation));
+            when(reservationRepository.findOverlappingPending(any(), any(), any(), any()))
+                    .thenReturn(List.of(overlapping1, overlapping2));
+            when(accommodationGrpcClient.validateAndCalculatePrice(any(), any(), any(), anyInt()))
+                    .thenReturn(accommodationResult);
+            when(reservationMapper.toResponse(reservation)).thenReturn(createResponse());
+
+            reservationService.approveReservation(RESERVATION_ID, HOST_CONTEXT);
+
+            assertThat(overlapping1.getStatus()).isEqualTo(ReservationStatus.REJECTED);
+            assertThat(overlapping2.getStatus()).isEqualTo(ReservationStatus.REJECTED);
+            verify(reservationRepository, times(3)).save(any()); // main + 2 overlapping
+        }
+
+        @Test
+        @DisplayName("With wrong host throws ForbiddenException")
+        void approveReservation_WithWrongHost_ThrowsForbiddenException() {
+            var reservation = createReservation();
+            var otherHost = new UserContext(UUID.randomUUID(), "HOST");
+
+            when(reservationRepository.findById(RESERVATION_ID)).thenReturn(Optional.of(reservation));
+
+            assertThatThrownBy(() -> reservationService.approveReservation(RESERVATION_ID, otherHost))
+                    .isInstanceOf(ForbiddenException.class)
+                    .hasMessageContaining("only approve reservations for your own accommodations");
+        }
+
+        @Test
+        @DisplayName("With non-pending status throws InvalidReservationException")
+        void approveReservation_WithNonPendingStatus_ThrowsInvalidReservationException() {
+            var reservation = createReservation();
+            reservation.setStatus(ReservationStatus.APPROVED);
+
+            when(reservationRepository.findById(RESERVATION_ID)).thenReturn(Optional.of(reservation));
+
+            assertThatThrownBy(() -> reservationService.approveReservation(RESERVATION_ID, HOST_CONTEXT))
+                    .isInstanceOf(InvalidReservationException.class)
+                    .hasMessageContaining("Only pending reservations can be approved");
+        }
+
+        @Test
+        @DisplayName("With non-existing ID throws ReservationNotFoundException")
+        void approveReservation_WithNonExistingId_ThrowsReservationNotFoundException() {
+            UUID id = UUID.randomUUID();
+            when(reservationRepository.findById(id)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> reservationService.approveReservation(id, HOST_CONTEXT))
+                    .isInstanceOf(ReservationNotFoundException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("RejectReservation")
+    class RejectReservationTests {
+
+        @Test
+        @DisplayName("With valid pending reservation rejects successfully")
+        void rejectReservation_WithValidPending_RejectsSuccessfully() {
+            var reservation = createReservation();
+            var response = createResponse();
+            var accommodationResult = new AccommodationValidationResult(
+                    true, null, null, HOST_ID, new BigDecimal("1000.00"), "PER_UNIT", "MANUAL", "Test Accommodation"
+            );
+
+            when(reservationRepository.findById(RESERVATION_ID)).thenReturn(Optional.of(reservation));
+            when(accommodationGrpcClient.validateAndCalculatePrice(any(), any(), any(), anyInt()))
+                    .thenReturn(accommodationResult);
+            when(reservationMapper.toResponse(reservation)).thenReturn(response);
+
+            ReservationResponse result = reservationService.rejectReservation(RESERVATION_ID, HOST_CONTEXT);
+
+            assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.REJECTED);
+            verify(reservationRepository).save(reservation);
+            verify(eventPublisher).publishReservationResponse(reservation, "Test Accommodation", false);
+        }
+
+        @Test
+        @DisplayName("With wrong host throws ForbiddenException")
+        void rejectReservation_WithWrongHost_ThrowsForbiddenException() {
+            var reservation = createReservation();
+            var otherHost = new UserContext(UUID.randomUUID(), "HOST");
+
+            when(reservationRepository.findById(RESERVATION_ID)).thenReturn(Optional.of(reservation));
+
+            assertThatThrownBy(() -> reservationService.rejectReservation(RESERVATION_ID, otherHost))
+                    .isInstanceOf(ForbiddenException.class)
+                    .hasMessageContaining("only reject reservations for your own accommodations");
+        }
+
+        @Test
+        @DisplayName("With non-pending status throws InvalidReservationException")
+        void rejectReservation_WithNonPendingStatus_ThrowsInvalidReservationException() {
+            var reservation = createReservation();
+            reservation.setStatus(ReservationStatus.CANCELLED);
+
+            when(reservationRepository.findById(RESERVATION_ID)).thenReturn(Optional.of(reservation));
+
+            assertThatThrownBy(() -> reservationService.rejectReservation(RESERVATION_ID, HOST_CONTEXT))
+                    .isInstanceOf(InvalidReservationException.class)
+                    .hasMessageContaining("Only pending reservations can be rejected");
+        }
+
+        @Test
+        @DisplayName("With non-existing ID throws ReservationNotFoundException")
+        void rejectReservation_WithNonExistingId_ThrowsReservationNotFoundException() {
+            UUID id = UUID.randomUUID();
+            when(reservationRepository.findById(id)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> reservationService.rejectReservation(id, HOST_CONTEXT))
+                    .isInstanceOf(ReservationNotFoundException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("GetByHostIdWithGuestInfo")
+    class GetByHostIdWithGuestInfoTests {
+
+        @Test
+        @DisplayName("Returns reservations with cancellation counts")
+        void getByHostIdWithGuestInfo_ReturnsReservationsWithCancellationCounts() {
+            var reservation = createReservation();
+            var response = createResponse();
+
+            when(reservationRepository.findByHostId(HOST_ID)).thenReturn(List.of(reservation));
+            when(reservationMapper.toResponse(reservation)).thenReturn(response);
+            when(reservationRepository.countByGuestIdAndStatus(GUEST_ID, ReservationStatus.CANCELLED))
+                    .thenReturn(3L);
+
+            List<ReservationWithGuestInfoResponse> result = reservationService.getByHostIdWithGuestInfo(HOST_CONTEXT);
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).guestCancellationCount()).isEqualTo(3L);
+        }
+
+        @Test
+        @DisplayName("With no reservations returns empty list")
+        void getByHostIdWithGuestInfo_WithNoReservations_ReturnsEmptyList() {
+            when(reservationRepository.findByHostId(HOST_ID)).thenReturn(List.of());
+
+            List<ReservationWithGuestInfoResponse> result = reservationService.getByHostIdWithGuestInfo(HOST_CONTEXT);
+
+            assertThat(result).isEmpty();
         }
     }
 }

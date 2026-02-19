@@ -3,6 +3,7 @@ package com.devoops.reservation.service;
 import com.devoops.reservation.config.UserContext;
 import com.devoops.reservation.dto.request.CreateReservationRequest;
 import com.devoops.reservation.dto.response.ReservationResponse;
+import com.devoops.reservation.dto.response.ReservationWithGuestInfoResponse;
 import com.devoops.reservation.entity.Reservation;
 import com.devoops.reservation.entity.ReservationStatus;
 import com.devoops.reservation.exception.AccommodationNotFoundException;
@@ -109,6 +110,19 @@ public class ReservationService {
         return reservationMapper.toResponseList(reservations);
     }
 
+    @Transactional(readOnly = true)
+    public List<ReservationWithGuestInfoResponse> getByHostIdWithGuestInfo(UserContext userContext) {
+        List<Reservation> reservations = reservationRepository.findByHostId(userContext.userId());
+        return reservations.stream()
+                .map(reservation -> {
+                    ReservationResponse response = reservationMapper.toResponse(reservation);
+                    long cancellationCount = reservationRepository.countByGuestIdAndStatus(
+                            reservation.getGuestId(), ReservationStatus.CANCELLED);
+                    return ReservationWithGuestInfoResponse.from(response, cancellationCount);
+                })
+                .toList();
+    }
+
     @Transactional
     public void deleteRequest(UUID id, UserContext userContext) {
         Reservation reservation = findReservationOrThrow(id);
@@ -160,16 +174,78 @@ public class ReservationService {
         reservationRepository.save(reservation);
         log.info("Guest {} cancelled reservation {}", userContext.userId(), id);
 
-        // Fetch accommodation name for notification
-        AccommodationValidationResult accommodationInfo = accommodationGrpcClient.validateAndCalculatePrice(
+        String accommodationName = fetchAccommodationName(reservation);
+        eventPublisher.publishReservationCancelled(reservation, accommodationName);
+    }
+
+    @Transactional
+    public ReservationResponse approveReservation(UUID id, UserContext userContext) {
+        Reservation reservation = findReservationOrThrow(id);
+
+        // Only the host who owns this reservation can approve it
+        if (!reservation.getHostId().equals(userContext.userId())) {
+            throw new ForbiddenException("You can only approve reservations for your own accommodations");
+        }
+
+        // Can only approve PENDING reservations
+        if (reservation.getStatus() != ReservationStatus.PENDING) {
+            throw new InvalidReservationException(
+                    "Only pending reservations can be approved. Current status: " + reservation.getStatus()
+            );
+        }
+
+        // Approve the reservation
+        reservation.setStatus(ReservationStatus.APPROVED);
+        reservationRepository.save(reservation);
+        log.info("Host {} approved reservation {}", userContext.userId(), id);
+
+        // Auto-reject overlapping pending reservations
+        List<Reservation> overlappingPending = reservationRepository.findOverlappingPending(
                 reservation.getAccommodationId(),
                 reservation.getStartDate(),
                 reservation.getEndDate(),
-                reservation.getGuestCount()
+                reservation.getId()
         );
-        String accommodationName = accommodationInfo.valid() ? accommodationInfo.accommodationName() : "Unknown Accommodation";
 
-        eventPublisher.publishReservationCancelled(reservation, accommodationName);
+        for (Reservation overlapping : overlappingPending) {
+            overlapping.setStatus(ReservationStatus.REJECTED);
+            reservationRepository.save(overlapping);
+            log.info("Auto-rejected overlapping reservation {} due to approval of reservation {}",
+                    overlapping.getId(), id);
+        }
+
+        // Fetch accommodation name and publish notification
+        String accommodationName = fetchAccommodationName(reservation);
+        eventPublisher.publishReservationResponse(reservation, accommodationName, true);
+
+        return reservationMapper.toResponse(reservation);
+    }
+
+    @Transactional
+    public ReservationResponse rejectReservation(UUID id, UserContext userContext) {
+        Reservation reservation = findReservationOrThrow(id);
+
+        // Only the host who owns this reservation can reject it
+        if (!reservation.getHostId().equals(userContext.userId())) {
+            throw new ForbiddenException("You can only reject reservations for your own accommodations");
+        }
+
+        // Can only reject PENDING reservations
+        if (reservation.getStatus() != ReservationStatus.PENDING) {
+            throw new InvalidReservationException(
+                    "Only pending reservations can be rejected. Current status: " + reservation.getStatus()
+            );
+        }
+
+        reservation.setStatus(ReservationStatus.REJECTED);
+        reservationRepository.save(reservation);
+        log.info("Host {} rejected reservation {}", userContext.userId(), id);
+
+        // Fetch accommodation name and publish notification
+        String accommodationName = fetchAccommodationName(reservation);
+        eventPublisher.publishReservationResponse(reservation, accommodationName, false);
+
+        return reservationMapper.toResponse(reservation);
     }
 
     // === Helper Methods ===
@@ -195,4 +271,13 @@ public class ReservationService {
         }
     }
 
+    private String fetchAccommodationName(Reservation reservation) {
+        AccommodationValidationResult accommodationInfo = accommodationGrpcClient.validateAndCalculatePrice(
+                reservation.getAccommodationId(),
+                reservation.getStartDate(),
+                reservation.getEndDate(),
+                reservation.getGuestCount()
+        );
+        return accommodationInfo.valid() ? accommodationInfo.accommodationName() : "Unknown Accommodation";
+    }
 }

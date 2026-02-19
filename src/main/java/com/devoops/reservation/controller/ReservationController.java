@@ -4,6 +4,7 @@ import com.devoops.reservation.config.RequireRole;
 import com.devoops.reservation.config.UserContext;
 import com.devoops.reservation.dto.request.CreateReservationRequest;
 import com.devoops.reservation.dto.response.ReservationResponse;
+import com.devoops.reservation.dto.response.ReservationWithGuestInfoResponse;
 import com.devoops.reservation.service.ReservationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -47,8 +48,8 @@ public class ReservationController {
 
     @GetMapping("/host")
     @RequireRole("HOST")
-    public ResponseEntity<List<ReservationResponse>> getByHost(UserContext userContext) {
-        return ResponseEntity.ok(reservationService.getByHostId(userContext));
+    public ResponseEntity<List<ReservationWithGuestInfoResponse>> getByHost(UserContext userContext) {
+        return ResponseEntity.ok(reservationService.getByHostIdWithGuestInfo(userContext));
     }
 
 
@@ -68,5 +69,21 @@ public class ReservationController {
             UserContext userContext) {
         reservationService.cancelReservation(id, userContext);
         return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/{id}/approve")
+    @RequireRole("HOST")
+    public ResponseEntity<ReservationResponse> approve(
+            @PathVariable UUID id,
+            UserContext userContext) {
+        return ResponseEntity.ok(reservationService.approveReservation(id, userContext));
+    }
+
+    @PutMapping("/{id}/reject")
+    @RequireRole("HOST")
+    public ResponseEntity<ReservationResponse> reject(
+            @PathVariable UUID id,
+            UserContext userContext) {
+        return ResponseEntity.ok(reservationService.rejectReservation(id, userContext));
     }
 }
