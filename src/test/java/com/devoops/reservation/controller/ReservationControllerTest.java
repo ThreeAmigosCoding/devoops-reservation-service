@@ -4,6 +4,7 @@ import com.devoops.reservation.config.RoleAuthorizationInterceptor;
 import com.devoops.reservation.config.UserContext;
 import com.devoops.reservation.config.UserContextResolver;
 import com.devoops.reservation.dto.response.ReservationResponse;
+import com.devoops.reservation.dto.response.ReservationWithGuestInfoResponse;
 import com.devoops.reservation.entity.ReservationStatus;
 import com.devoops.reservation.exception.ForbiddenException;
 import com.devoops.reservation.exception.GlobalExceptionHandler;
@@ -72,6 +73,28 @@ class ReservationControllerTest {
                 2, new BigDecimal("1000.00"), ReservationStatus.PENDING,
                 LocalDateTime.now(), LocalDateTime.now()
         );
+    }
+
+    private ReservationResponse createApprovedResponse() {
+        return new ReservationResponse(
+                RESERVATION_ID, ACCOMMODATION_ID, GUEST_ID, HOST_ID,
+                LocalDate.now().plusDays(10), LocalDate.now().plusDays(15),
+                2, new BigDecimal("1000.00"), ReservationStatus.APPROVED,
+                LocalDateTime.now(), LocalDateTime.now()
+        );
+    }
+
+    private ReservationResponse createRejectedResponse() {
+        return new ReservationResponse(
+                RESERVATION_ID, ACCOMMODATION_ID, GUEST_ID, HOST_ID,
+                LocalDate.now().plusDays(10), LocalDate.now().plusDays(15),
+                2, new BigDecimal("1000.00"), ReservationStatus.REJECTED,
+                LocalDateTime.now(), LocalDateTime.now()
+        );
+    }
+
+    private ReservationWithGuestInfoResponse createResponseWithGuestInfo() {
+        return ReservationWithGuestInfoResponse.from(createResponse(), 2L);
     }
 
     private Map<String, Object> validCreateRequest() {
@@ -261,16 +284,17 @@ class ReservationControllerTest {
     class GetByHostEndpoint {
 
         @Test
-        @DisplayName("Returns 200 with list")
+        @DisplayName("Returns 200 with list including guest cancellation count")
         void getByHost_Returns200WithList() throws Exception {
-            when(reservationService.getByHostId(any(UserContext.class)))
-                    .thenReturn(List.of(createResponse()));
+            when(reservationService.getByHostIdWithGuestInfo(any(UserContext.class)))
+                    .thenReturn(List.of(createResponseWithGuestInfo()));
 
             mockMvc.perform(get("/api/reservation/host")
                             .header("X-User-Id", HOST_ID.toString())
                             .header("X-User-Role", "HOST"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$[0].id").value(RESERVATION_ID.toString()));
+                    .andExpect(jsonPath("$[0].id").value(RESERVATION_ID.toString()))
+                    .andExpect(jsonPath("$[0].guestCancellationCount").value(2));
         }
 
         @Test
@@ -416,6 +440,136 @@ class ReservationControllerTest {
                             .header("X-User-Id", HOST_ID.toString())
                             .header("X-User-Role", "HOST"))
                     .andExpect(status().isForbidden());
+        }
+    }
+
+    @Nested
+    @DisplayName("PUT /api/reservation/{id}/approve")
+    class ApproveEndpoint {
+
+        @Test
+        @DisplayName("With valid request returns 200")
+        void approve_WithValidRequest_Returns200() throws Exception {
+            when(reservationService.approveReservation(eq(RESERVATION_ID), any(UserContext.class)))
+                    .thenReturn(createApprovedResponse());
+
+            mockMvc.perform(put("/api/reservation/{id}/approve", RESERVATION_ID)
+                            .header("X-User-Id", HOST_ID.toString())
+                            .header("X-User-Role", "HOST"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.id").value(RESERVATION_ID.toString()))
+                    .andExpect(jsonPath("$.status").value("APPROVED"));
+        }
+
+        @Test
+        @DisplayName("With GUEST role returns 403")
+        void approve_WithGuestRole_Returns403() throws Exception {
+            mockMvc.perform(put("/api/reservation/{id}/approve", RESERVATION_ID)
+                            .header("X-User-Id", GUEST_ID.toString())
+                            .header("X-User-Role", "GUEST"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("With non-existing ID returns 404")
+        void approve_WithNonExistingId_Returns404() throws Exception {
+            UUID id = UUID.randomUUID();
+            when(reservationService.approveReservation(eq(id), any(UserContext.class)))
+                    .thenThrow(new ReservationNotFoundException("Not found"));
+
+            mockMvc.perform(put("/api/reservation/{id}/approve", id)
+                            .header("X-User-Id", HOST_ID.toString())
+                            .header("X-User-Role", "HOST"))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("With wrong host returns 403")
+        void approve_WithWrongHost_Returns403() throws Exception {
+            when(reservationService.approveReservation(eq(RESERVATION_ID), any(UserContext.class)))
+                    .thenThrow(new ForbiddenException("Not the host"));
+
+            mockMvc.perform(put("/api/reservation/{id}/approve", RESERVATION_ID)
+                            .header("X-User-Id", UUID.randomUUID().toString())
+                            .header("X-User-Role", "HOST"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("With non-pending status returns 400")
+        void approve_WithNonPendingStatus_Returns400() throws Exception {
+            when(reservationService.approveReservation(eq(RESERVATION_ID), any(UserContext.class)))
+                    .thenThrow(new InvalidReservationException("Only pending reservations can be approved"));
+
+            mockMvc.perform(put("/api/reservation/{id}/approve", RESERVATION_ID)
+                            .header("X-User-Id", HOST_ID.toString())
+                            .header("X-User-Role", "HOST"))
+                    .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Nested
+    @DisplayName("PUT /api/reservation/{id}/reject")
+    class RejectEndpoint {
+
+        @Test
+        @DisplayName("With valid request returns 200")
+        void reject_WithValidRequest_Returns200() throws Exception {
+            when(reservationService.rejectReservation(eq(RESERVATION_ID), any(UserContext.class)))
+                    .thenReturn(createRejectedResponse());
+
+            mockMvc.perform(put("/api/reservation/{id}/reject", RESERVATION_ID)
+                            .header("X-User-Id", HOST_ID.toString())
+                            .header("X-User-Role", "HOST"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.id").value(RESERVATION_ID.toString()))
+                    .andExpect(jsonPath("$.status").value("REJECTED"));
+        }
+
+        @Test
+        @DisplayName("With GUEST role returns 403")
+        void reject_WithGuestRole_Returns403() throws Exception {
+            mockMvc.perform(put("/api/reservation/{id}/reject", RESERVATION_ID)
+                            .header("X-User-Id", GUEST_ID.toString())
+                            .header("X-User-Role", "GUEST"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("With non-existing ID returns 404")
+        void reject_WithNonExistingId_Returns404() throws Exception {
+            UUID id = UUID.randomUUID();
+            when(reservationService.rejectReservation(eq(id), any(UserContext.class)))
+                    .thenThrow(new ReservationNotFoundException("Not found"));
+
+            mockMvc.perform(put("/api/reservation/{id}/reject", id)
+                            .header("X-User-Id", HOST_ID.toString())
+                            .header("X-User-Role", "HOST"))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("With wrong host returns 403")
+        void reject_WithWrongHost_Returns403() throws Exception {
+            when(reservationService.rejectReservation(eq(RESERVATION_ID), any(UserContext.class)))
+                    .thenThrow(new ForbiddenException("Not the host"));
+
+            mockMvc.perform(put("/api/reservation/{id}/reject", RESERVATION_ID)
+                            .header("X-User-Id", UUID.randomUUID().toString())
+                            .header("X-User-Role", "HOST"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("With non-pending status returns 400")
+        void reject_WithNonPendingStatus_Returns400() throws Exception {
+            when(reservationService.rejectReservation(eq(RESERVATION_ID), any(UserContext.class)))
+                    .thenThrow(new InvalidReservationException("Only pending reservations can be rejected"));
+
+            mockMvc.perform(put("/api/reservation/{id}/reject", RESERVATION_ID)
+                            .header("X-User-Id", HOST_ID.toString())
+                            .header("X-User-Role", "HOST"))
+                    .andExpect(status().isBadRequest());
         }
     }
 }

@@ -2,6 +2,7 @@ package com.devoops.reservation.service;
 
 import com.devoops.reservation.dto.message.ReservationCancelledMessage;
 import com.devoops.reservation.dto.message.ReservationCreatedMessage;
+import com.devoops.reservation.dto.message.ReservationResponseMessage;
 import com.devoops.reservation.entity.Reservation;
 import com.devoops.reservation.grpc.UserGrpcClient;
 import com.devoops.reservation.grpc.UserSummaryResult;
@@ -27,6 +28,9 @@ public class ReservationEventPublisherService {
 
     @Value("${rabbitmq.routing-key.reservation-cancelled}")
     private String reservationCancelledRoutingKey;
+
+    @Value("${rabbitmq.routing-key.reservation-response}")
+    private String reservationResponseRoutingKey;
 
     public void publishReservationCreated(Reservation reservation, String accommodationName) {
         UserSummaryResult hostSummary = userGrpcClient.getUserSummary(reservation.getHostId());
@@ -86,5 +90,39 @@ public class ReservationEventPublisherService {
                 reservation.getId(), hostSummary.email(), guestSummary.getFullName());
 
         rabbitTemplate.convertAndSend(notificationExchange, reservationCancelledRoutingKey, message);
+    }
+
+    public void publishReservationResponse(Reservation reservation, String accommodationName, boolean approved) {
+        UserSummaryResult guestSummary = userGrpcClient.getUserSummary(reservation.getGuestId());
+        UserSummaryResult hostSummary = userGrpcClient.getUserSummary(reservation.getHostId());
+
+        if (!guestSummary.found()) {
+            log.warn("Guest not found for reservation {}, skipping notification", reservation.getId());
+            return;
+        }
+
+        if (!hostSummary.found()) {
+            log.warn("Host not found for reservation {}, skipping notification", reservation.getId());
+            return;
+        }
+
+        ReservationResponseMessage.ReservationResponseStatus status = approved
+                ? ReservationResponseMessage.ReservationResponseStatus.APPROVED
+                : ReservationResponseMessage.ReservationResponseStatus.DECLINED;
+
+        ReservationResponseMessage message = new ReservationResponseMessage(
+                reservation.getGuestId(),
+                guestSummary.email(),
+                hostSummary.getFullName(),
+                accommodationName,
+                status,
+                reservation.getStartDate(),
+                reservation.getEndDate()
+        );
+
+        log.info("Publishing reservation response event: reservationId={}, guestEmail={}, status={}",
+                reservation.getId(), guestSummary.email(), status);
+
+        rabbitTemplate.convertAndSend(notificationExchange, reservationResponseRoutingKey, message);
     }
 }
