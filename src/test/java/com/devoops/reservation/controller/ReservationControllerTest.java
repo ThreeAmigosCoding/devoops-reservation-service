@@ -68,7 +68,8 @@ class ReservationControllerTest {
 
     private ReservationResponse createResponse() {
         return new ReservationResponse(
-                RESERVATION_ID, ACCOMMODATION_ID, GUEST_ID, HOST_ID,
+                RESERVATION_ID, ACCOMMODATION_ID, "Test Accommodation",
+                GUEST_ID, "John Doe", HOST_ID, "Jane Host",
                 LocalDate.now().plusDays(10), LocalDate.now().plusDays(15),
                 2, new BigDecimal("1000.00"), ReservationStatus.PENDING,
                 LocalDateTime.now(), LocalDateTime.now()
@@ -77,7 +78,8 @@ class ReservationControllerTest {
 
     private ReservationResponse createApprovedResponse() {
         return new ReservationResponse(
-                RESERVATION_ID, ACCOMMODATION_ID, GUEST_ID, HOST_ID,
+                RESERVATION_ID, ACCOMMODATION_ID, "Test Accommodation",
+                GUEST_ID, "John Doe", HOST_ID, "Jane Host",
                 LocalDate.now().plusDays(10), LocalDate.now().plusDays(15),
                 2, new BigDecimal("1000.00"), ReservationStatus.APPROVED,
                 LocalDateTime.now(), LocalDateTime.now()
@@ -86,7 +88,8 @@ class ReservationControllerTest {
 
     private ReservationResponse createRejectedResponse() {
         return new ReservationResponse(
-                RESERVATION_ID, ACCOMMODATION_ID, GUEST_ID, HOST_ID,
+                RESERVATION_ID, ACCOMMODATION_ID, "Test Accommodation",
+                GUEST_ID, "John Doe", HOST_ID, "Jane Host",
                 LocalDate.now().plusDays(10), LocalDate.now().plusDays(15),
                 2, new BigDecimal("1000.00"), ReservationStatus.REJECTED,
                 LocalDateTime.now(), LocalDateTime.now()

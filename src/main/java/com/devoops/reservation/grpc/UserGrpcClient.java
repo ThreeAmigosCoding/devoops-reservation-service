@@ -34,7 +34,8 @@ public class UserGrpcClient {
                     null,
                     null,
                     null,
-                    null
+                    null,
+                    false
             );
         }
 
@@ -44,7 +45,8 @@ public class UserGrpcClient {
                 response.getEmail(),
                 response.getFirstName(),
                 response.getLastName(),
-                response.getRole()
+                response.getRole(),
+                response.getIsDeleted()
         );
     }
 }

@@ -21,7 +21,13 @@ public interface ReservationMapper {
     @Mapping(target = "isDeleted", ignore = true)
     Reservation toEntity(CreateReservationRequest request);
 
+    @Mapping(target = "accommodationName", ignore = true)
+    @Mapping(target = "guestName", ignore = true)
+    @Mapping(target = "hostName", ignore = true)
     ReservationResponse toResponse(Reservation reservation);
 
-    List<ReservationResponse> toResponseList(List<Reservation> reservations);
+    @Mapping(target = "accommodationName", source = "accommodationName")
+    @Mapping(target = "guestName", source = "guestName")
+    @Mapping(target = "hostName", source = "hostName")
+    ReservationResponse toResponseWithNames(Reservation reservation, String accommodationName, String guestName, String hostName);
 }

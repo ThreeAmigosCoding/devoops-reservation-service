@@ -10,8 +10,11 @@ import java.util.UUID;
 public record ReservationResponse(
         UUID id,
         UUID accommodationId,
+        String accommodationName,
         UUID guestId,
+        String guestName,
         UUID hostId,
+        String hostName,
         LocalDate startDate,
         LocalDate endDate,
         int guestCount,

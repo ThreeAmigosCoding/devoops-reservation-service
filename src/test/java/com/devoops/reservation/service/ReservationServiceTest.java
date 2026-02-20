@@ -12,6 +12,8 @@ import com.devoops.reservation.exception.InvalidReservationException;
 import com.devoops.reservation.exception.ReservationNotFoundException;
 import com.devoops.reservation.grpc.AccommodationGrpcClient;
 import com.devoops.reservation.grpc.AccommodationValidationResult;
+import com.devoops.reservation.grpc.UserGrpcClient;
+import com.devoops.reservation.grpc.UserSummaryResult;
 import com.devoops.reservation.mapper.ReservationMapper;
 import com.devoops.reservation.repository.ReservationRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -31,8 +33,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -46,6 +47,9 @@ class ReservationServiceTest {
 
     @Mock
     private AccommodationGrpcClient accommodationGrpcClient;
+
+    @Mock
+    private UserGrpcClient userGrpcClient;
 
     @Mock
     private ReservationEventPublisherService eventPublisher;
@@ -76,11 +80,19 @@ class ReservationServiceTest {
 
     private ReservationResponse createResponse() {
         return new ReservationResponse(
-                RESERVATION_ID, ACCOMMODATION_ID, GUEST_ID, HOST_ID,
+                RESERVATION_ID, ACCOMMODATION_ID, "Test Accommodation",
+                GUEST_ID, "John Doe", HOST_ID, "Jane Host",
                 LocalDate.now().plusDays(10), LocalDate.now().plusDays(15),
                 2, new BigDecimal("1000.00"), ReservationStatus.PENDING,
                 LocalDateTime.now(), LocalDateTime.now()
         );
+    }
+
+    private void setupUserMocks() {
+        UserSummaryResult guestSummary = new UserSummaryResult(true, GUEST_ID, "guest@test.com", "John", "Doe", "GUEST", false);
+        UserSummaryResult hostSummary = new UserSummaryResult(true, HOST_ID, "host@test.com", "Jane", "Host", "HOST", false);
+        when(userGrpcClient.getUserSummary(GUEST_ID)).thenReturn(guestSummary);
+        when(userGrpcClient.getUserSummary(HOST_ID)).thenReturn(hostSummary);
     }
 
     private CreateReservationRequest createRequest() {
@@ -112,7 +124,8 @@ class ReservationServiceTest {
                     .thenReturn(List.of());
             when(reservationMapper.toEntity(request)).thenReturn(reservation);
             when(reservationRepository.saveAndFlush(reservation)).thenReturn(reservation);
-            when(reservationMapper.toResponse(reservation)).thenReturn(response);
+            setupUserMocks();
+            when(reservationMapper.toResponseWithNames(eq(reservation), anyString(), anyString(), anyString())).thenReturn(response);
 
             ReservationResponse result = reservationService.create(request, GUEST_CONTEXT);
 
@@ -159,7 +172,8 @@ class ReservationServiceTest {
                     .thenReturn(List.of());
             when(reservationMapper.toEntity(request)).thenReturn(reservation);
             when(reservationRepository.saveAndFlush(reservation)).thenReturn(reservation);
-            when(reservationMapper.toResponse(reservation)).thenReturn(response);
+            setupUserMocks();
+            when(reservationMapper.toResponseWithNames(eq(reservation), anyString(), anyString(), anyString())).thenReturn(response);
 
             reservationService.create(request, GUEST_CONTEXT);
 
@@ -240,9 +254,14 @@ class ReservationServiceTest {
         void getById_WithExistingIdAndGuestAccess_ReturnsReservationResponse() {
             var reservation = createReservation();
             var response = createResponse();
+            var validationResult = new AccommodationValidationResult(
+                    true, null, null, HOST_ID, new BigDecimal("1000.00"), "PER_UNIT", "MANUAL", "Test Accommodation"
+            );
 
             when(reservationRepository.findById(RESERVATION_ID)).thenReturn(Optional.of(reservation));
-            when(reservationMapper.toResponse(reservation)).thenReturn(response);
+            when(accommodationGrpcClient.validateAndCalculatePrice(any(), any(), any(), anyInt())).thenReturn(validationResult);
+            setupUserMocks();
+            when(reservationMapper.toResponseWithNames(eq(reservation), anyString(), anyString(), anyString())).thenReturn(response);
 
             ReservationResponse result = reservationService.getById(RESERVATION_ID, GUEST_CONTEXT);
 
@@ -254,9 +273,14 @@ class ReservationServiceTest {
         void getById_WithExistingIdAndHostAccess_ReturnsReservationResponse() {
             var reservation = createReservation();
             var response = createResponse();
+            var validationResult = new AccommodationValidationResult(
+                    true, null, null, HOST_ID, new BigDecimal("1000.00"), "PER_UNIT", "MANUAL", "Test Accommodation"
+            );
 
             when(reservationRepository.findById(RESERVATION_ID)).thenReturn(Optional.of(reservation));
-            when(reservationMapper.toResponse(reservation)).thenReturn(response);
+            when(accommodationGrpcClient.validateAndCalculatePrice(any(), any(), any(), anyInt())).thenReturn(validationResult);
+            setupUserMocks();
+            when(reservationMapper.toResponseWithNames(eq(reservation), anyString(), anyString(), anyString())).thenReturn(response);
 
             ReservationResponse result = reservationService.getById(RESERVATION_ID, HOST_CONTEXT);
 
@@ -293,11 +317,17 @@ class ReservationServiceTest {
         @Test
         @DisplayName("With existing guest returns reservation list")
         void getByGuestId_WithExistingGuest_ReturnsReservationList() {
-            var reservations = List.of(createReservation());
-            var responses = List.of(createResponse());
+            var reservation = createReservation();
+            var reservations = List.of(reservation);
+            var response = createResponse();
+            var validationResult = new AccommodationValidationResult(
+                    true, null, null, HOST_ID, new BigDecimal("1000.00"), "PER_UNIT", "MANUAL", "Test Accommodation"
+            );
 
             when(reservationRepository.findByGuestId(GUEST_ID)).thenReturn(reservations);
-            when(reservationMapper.toResponseList(reservations)).thenReturn(responses);
+            when(accommodationGrpcClient.validateAndCalculatePrice(any(), any(), any(), anyInt())).thenReturn(validationResult);
+            setupUserMocks();
+            when(reservationMapper.toResponseWithNames(eq(reservation), anyString(), anyString(), anyString())).thenReturn(response);
 
             List<ReservationResponse> result = reservationService.getByGuestId(GUEST_CONTEXT);
 
@@ -308,7 +338,6 @@ class ReservationServiceTest {
         @DisplayName("With no reservations returns empty list")
         void getByGuestId_WithNoReservations_ReturnsEmptyList() {
             when(reservationRepository.findByGuestId(GUEST_ID)).thenReturn(List.of());
-            when(reservationMapper.toResponseList(List.of())).thenReturn(List.of());
 
             List<ReservationResponse> result = reservationService.getByGuestId(GUEST_CONTEXT);
 
@@ -323,11 +352,17 @@ class ReservationServiceTest {
         @Test
         @DisplayName("With existing host returns reservation list")
         void getByHostId_WithExistingHost_ReturnsReservationList() {
-            var reservations = List.of(createReservation());
-            var responses = List.of(createResponse());
+            var reservation = createReservation();
+            var reservations = List.of(reservation);
+            var response = createResponse();
+            var validationResult = new AccommodationValidationResult(
+                    true, null, null, HOST_ID, new BigDecimal("1000.00"), "PER_UNIT", "MANUAL", "Test Accommodation"
+            );
 
             when(reservationRepository.findByHostId(HOST_ID)).thenReturn(reservations);
-            when(reservationMapper.toResponseList(reservations)).thenReturn(responses);
+            when(accommodationGrpcClient.validateAndCalculatePrice(any(), any(), any(), anyInt())).thenReturn(validationResult);
+            setupUserMocks();
+            when(reservationMapper.toResponseWithNames(eq(reservation), anyString(), anyString(), anyString())).thenReturn(response);
 
             List<ReservationResponse> result = reservationService.getByHostId(HOST_CONTEXT);
 
@@ -338,7 +373,6 @@ class ReservationServiceTest {
         @DisplayName("With no reservations returns empty list")
         void getByHostId_WithNoReservations_ReturnsEmptyList() {
             when(reservationRepository.findByHostId(HOST_ID)).thenReturn(List.of());
-            when(reservationMapper.toResponseList(List.of())).thenReturn(List.of());
 
             List<ReservationResponse> result = reservationService.getByHostId(HOST_CONTEXT);
 
@@ -518,7 +552,8 @@ class ReservationServiceTest {
                     .thenReturn(List.of());
             when(accommodationGrpcClient.validateAndCalculatePrice(any(), any(), any(), anyInt()))
                     .thenReturn(accommodationResult);
-            when(reservationMapper.toResponse(reservation)).thenReturn(response);
+            setupUserMocks();
+            when(reservationMapper.toResponseWithNames(eq(reservation), anyString(), anyString(), anyString())).thenReturn(response);
 
             ReservationResponse result = reservationService.approveReservation(RESERVATION_ID, HOST_CONTEXT);
 
@@ -558,7 +593,8 @@ class ReservationServiceTest {
                     .thenReturn(List.of(overlapping1, overlapping2));
             when(accommodationGrpcClient.validateAndCalculatePrice(any(), any(), any(), anyInt()))
                     .thenReturn(accommodationResult);
-            when(reservationMapper.toResponse(reservation)).thenReturn(createResponse());
+            setupUserMocks();
+            when(reservationMapper.toResponseWithNames(eq(reservation), anyString(), anyString(), anyString())).thenReturn(createResponse());
 
             reservationService.approveReservation(RESERVATION_ID, HOST_CONTEXT);
 
@@ -620,7 +656,8 @@ class ReservationServiceTest {
             when(reservationRepository.findById(RESERVATION_ID)).thenReturn(Optional.of(reservation));
             when(accommodationGrpcClient.validateAndCalculatePrice(any(), any(), any(), anyInt()))
                     .thenReturn(accommodationResult);
-            when(reservationMapper.toResponse(reservation)).thenReturn(response);
+            setupUserMocks();
+            when(reservationMapper.toResponseWithNames(eq(reservation), anyString(), anyString(), anyString())).thenReturn(response);
 
             ReservationResponse result = reservationService.rejectReservation(RESERVATION_ID, HOST_CONTEXT);
 
@@ -675,9 +712,14 @@ class ReservationServiceTest {
         void getByHostIdWithGuestInfo_ReturnsReservationsWithCancellationCounts() {
             var reservation = createReservation();
             var response = createResponse();
+            var validationResult = new AccommodationValidationResult(
+                    true, null, null, HOST_ID, new BigDecimal("1000.00"), "PER_UNIT", "MANUAL", "Test Accommodation"
+            );
 
             when(reservationRepository.findByHostId(HOST_ID)).thenReturn(List.of(reservation));
-            when(reservationMapper.toResponse(reservation)).thenReturn(response);
+            when(accommodationGrpcClient.validateAndCalculatePrice(any(), any(), any(), anyInt())).thenReturn(validationResult);
+            setupUserMocks();
+            when(reservationMapper.toResponseWithNames(eq(reservation), anyString(), anyString(), anyString())).thenReturn(response);
             when(reservationRepository.countByGuestIdAndStatus(GUEST_ID, ReservationStatus.CANCELLED))
                     .thenReturn(3L);
 

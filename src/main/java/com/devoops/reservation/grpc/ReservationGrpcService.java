@@ -1,9 +1,7 @@
 package com.devoops.reservation.grpc;
 
 import com.devoops.reservation.entity.Reservation;
-import com.devoops.reservation.grpc.proto.CheckReservationsExistRequest;
-import com.devoops.reservation.grpc.proto.CheckReservationsExistResponse;
-import com.devoops.reservation.grpc.proto.ReservationInternalServiceGrpc;
+import com.devoops.reservation.grpc.proto.*;
 import com.devoops.reservation.repository.ReservationRepository;
 import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +37,56 @@ public class ReservationGrpcService extends ReservationInternalServiceGrpc.Reser
                 .build();
 
         responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
+
+    @Override
+    public void checkGuestCanBeDeleted(CheckGuestDeletionRequest request,
+                                       StreamObserver<CheckDeletionResponse> responseObserver) {
+        UUID guestId = UUID.fromString(request.getGuestId());
+        LocalDate today = LocalDate.now();
+
+        log.debug("gRPC: Checking if guest {} can be deleted", guestId);
+
+        long activeCount = reservationRepository.countActiveReservationsForGuest(guestId, today);
+
+        CheckDeletionResponse.Builder responseBuilder = CheckDeletionResponse.newBuilder()
+                .setActiveReservationCount((int) activeCount);
+
+        if (activeCount > 0) {
+            responseBuilder.setCanBeDeleted(false)
+                    .setReason("Guest has " + activeCount + " active reservation(s)");
+        } else {
+            responseBuilder.setCanBeDeleted(true)
+                    .setReason("");
+        }
+
+        responseObserver.onNext(responseBuilder.build());
+        responseObserver.onCompleted();
+    }
+
+    @Override
+    public void checkHostCanBeDeleted(CheckHostDeletionRequest request,
+                                      StreamObserver<CheckDeletionResponse> responseObserver) {
+        UUID hostId = UUID.fromString(request.getHostId());
+        LocalDate today = LocalDate.now();
+
+        log.debug("gRPC: Checking if host {} can be deleted", hostId);
+
+        long activeCount = reservationRepository.countActiveReservationsForHost(hostId, today);
+
+        CheckDeletionResponse.Builder responseBuilder = CheckDeletionResponse.newBuilder()
+                .setActiveReservationCount((int) activeCount);
+
+        if (activeCount > 0) {
+            responseBuilder.setCanBeDeleted(false)
+                    .setReason("Host has " + activeCount + " active reservation(s) on their accommodations");
+        } else {
+            responseBuilder.setCanBeDeleted(true)
+                    .setReason("");
+        }
+
+        responseObserver.onNext(responseBuilder.build());
         responseObserver.onCompleted();
     }
 }
