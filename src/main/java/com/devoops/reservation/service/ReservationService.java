@@ -12,6 +12,8 @@ import com.devoops.reservation.exception.InvalidReservationException;
 import com.devoops.reservation.exception.ReservationNotFoundException;
 import com.devoops.reservation.grpc.AccommodationGrpcClient;
 import com.devoops.reservation.grpc.AccommodationValidationResult;
+import com.devoops.reservation.grpc.UserGrpcClient;
+import com.devoops.reservation.grpc.UserSummaryResult;
 import com.devoops.reservation.mapper.ReservationMapper;
 import com.devoops.reservation.repository.ReservationRepository;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +33,7 @@ public class ReservationService {
     private final ReservationRepository reservationRepository;
     private final ReservationMapper reservationMapper;
     private final AccommodationGrpcClient accommodationGrpcClient;
+    private final UserGrpcClient userGrpcClient;
     private final ReservationEventPublisherService eventPublisher;
 
     @Transactional
@@ -88,26 +91,26 @@ public class ReservationService {
 
         eventPublisher.publishReservationCreated(reservation, validationResult.accommodationName());
 
-        return reservationMapper.toResponse(reservation);
+        return toResponseWithNames(reservation);
     }
 
     @Transactional(readOnly = true)
     public ReservationResponse getById(UUID id, UserContext userContext) {
         Reservation reservation = findReservationOrThrow(id);
         validateAccessToReservation(reservation, userContext);
-        return reservationMapper.toResponse(reservation);
+        return toResponseWithNames(reservation);
     }
 
     @Transactional(readOnly = true)
     public List<ReservationResponse> getByGuestId(UserContext userContext) {
         List<Reservation> reservations = reservationRepository.findByGuestId(userContext.userId());
-        return reservationMapper.toResponseList(reservations);
+        return toResponseListWithNames(reservations);
     }
 
     @Transactional(readOnly = true)
     public List<ReservationResponse> getByHostId(UserContext userContext) {
         List<Reservation> reservations = reservationRepository.findByHostId(userContext.userId());
-        return reservationMapper.toResponseList(reservations);
+        return toResponseListWithNames(reservations);
     }
 
     @Transactional(readOnly = true)
@@ -115,7 +118,7 @@ public class ReservationService {
         List<Reservation> reservations = reservationRepository.findByHostId(userContext.userId());
         return reservations.stream()
                 .map(reservation -> {
-                    ReservationResponse response = reservationMapper.toResponse(reservation);
+                    ReservationResponse response = toResponseWithNames(reservation);
                     long cancellationCount = reservationRepository.countByGuestIdAndStatus(
                             reservation.getGuestId(), ReservationStatus.CANCELLED);
                     return ReservationWithGuestInfoResponse.from(response, cancellationCount);
@@ -218,7 +221,7 @@ public class ReservationService {
         String accommodationName = fetchAccommodationName(reservation);
         eventPublisher.publishReservationResponse(reservation, accommodationName, true);
 
-        return reservationMapper.toResponse(reservation);
+        return toResponseWithNames(reservation);
     }
 
     @Transactional
@@ -245,7 +248,7 @@ public class ReservationService {
         String accommodationName = fetchAccommodationName(reservation);
         eventPublisher.publishReservationResponse(reservation, accommodationName, false);
 
-        return reservationMapper.toResponse(reservation);
+        return toResponseWithNames(reservation);
     }
 
     // === Helper Methods ===
@@ -279,5 +282,23 @@ public class ReservationService {
                 reservation.getGuestCount()
         );
         return accommodationInfo.valid() ? accommodationInfo.accommodationName() : "Unknown Accommodation";
+    }
+
+    private String fetchUserName(UUID userId) {
+        UserSummaryResult userSummary = userGrpcClient.getUserSummary(userId);
+        return userSummary.found() ? userSummary.getFullName() : "Unknown User";
+    }
+
+    private ReservationResponse toResponseWithNames(Reservation reservation) {
+        String accommodationName = fetchAccommodationName(reservation);
+        String guestName = fetchUserName(reservation.getGuestId());
+        String hostName = fetchUserName(reservation.getHostId());
+        return reservationMapper.toResponseWithNames(reservation, accommodationName, guestName, hostName);
+    }
+
+    private List<ReservationResponse> toResponseListWithNames(List<Reservation> reservations) {
+        return reservations.stream()
+                .map(this::toResponseWithNames)
+                .toList();
     }
 }

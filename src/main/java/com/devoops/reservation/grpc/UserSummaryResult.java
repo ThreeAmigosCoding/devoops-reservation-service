@@ -8,9 +8,11 @@ public record UserSummaryResult(
         String email,
         String firstName,
         String lastName,
-        String role
+        String role,
+        boolean isDeleted
 ) {
     public String getFullName() {
-        return firstName + " " + lastName;
+        String name = firstName + " " + lastName;
+        return isDeleted ? name + " (Deleted)" : name;
     }
 }

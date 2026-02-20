@@ -69,11 +69,11 @@ class ReservationEventPublisherServiceTest {
     }
 
     private UserSummaryResult createGuestSummary() {
-        return new UserSummaryResult(true, GUEST_ID, "guest@example.com", "John", "Doe", "GUEST");
+        return new UserSummaryResult(true, GUEST_ID, "guest@example.com", "John", "Doe", "GUEST", false);
     }
 
     private UserSummaryResult createHostSummary() {
-        return new UserSummaryResult(true, HOST_ID, "host@example.com", "Jane", "Smith", "HOST");
+        return new UserSummaryResult(true, HOST_ID, "host@example.com", "Jane", "Smith", "HOST", false);
     }
 
     @Nested
@@ -134,7 +134,7 @@ class ReservationEventPublisherServiceTest {
         @DisplayName("With missing guest skips publishing")
         void publishReservationResponse_WithMissingGuest_SkipsPublishing() {
             var reservation = createReservation();
-            var notFoundSummary = new UserSummaryResult(false, null, null, null, null, null);
+            var notFoundSummary = new UserSummaryResult(false, null, null, null, null, null, false);
 
             when(userGrpcClient.getUserSummary(GUEST_ID)).thenReturn(notFoundSummary);
 
@@ -148,7 +148,7 @@ class ReservationEventPublisherServiceTest {
         void publishReservationResponse_WithMissingHost_SkipsPublishing() {
             var reservation = createReservation();
             var guestSummary = createGuestSummary();
-            var notFoundSummary = new UserSummaryResult(false, null, null, null, null, null);
+            var notFoundSummary = new UserSummaryResult(false, null, null, null, null, null, false);
 
             when(userGrpcClient.getUserSummary(GUEST_ID)).thenReturn(guestSummary);
             when(userGrpcClient.getUserSummary(HOST_ID)).thenReturn(notFoundSummary);

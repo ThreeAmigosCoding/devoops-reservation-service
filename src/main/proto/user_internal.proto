@@ -19,4 +19,5 @@ message GetUserSummaryResponse {
   string first_name = 4;
   string last_name = 5;
   string role = 6;
+  bool is_deleted = 7;
 }

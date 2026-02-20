@@ -7,6 +7,8 @@ option java_package = "com.devoops.reservation.grpc.proto";
 
 service ReservationInternalService {
   rpc CheckReservationsExist(CheckReservationsExistRequest) returns (CheckReservationsExistResponse);
+  rpc CheckGuestCanBeDeleted(CheckGuestDeletionRequest) returns (CheckDeletionResponse);
+  rpc CheckHostCanBeDeleted(CheckHostDeletionRequest) returns (CheckDeletionResponse);
 }
 
 message CheckReservationsExistRequest {
@@ -17,4 +19,18 @@ message CheckReservationsExistRequest {
 
 message CheckReservationsExistResponse {
   bool has_reservations = 1;
+}
+
+message CheckGuestDeletionRequest {
+  string guest_id = 1;
+}
+
+message CheckHostDeletionRequest {
+  string host_id = 1;
+}
+
+message CheckDeletionResponse {
+  bool can_be_deleted = 1;
+  string reason = 2;
+  int32 active_reservation_count = 3;
 }

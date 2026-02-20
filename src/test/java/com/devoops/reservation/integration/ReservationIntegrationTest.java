@@ -90,7 +90,8 @@ class ReservationIntegrationTest {
                 "host@example.com",
                 "Test",
                 "Host",
-                "HOST"
+                "HOST",
+                false
         );
         when(userGrpcClient.getUserSummary(any(UUID.class)))
                 .thenReturn(hostSummary);

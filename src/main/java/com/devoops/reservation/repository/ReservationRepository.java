@@ -61,4 +61,34 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
      * Used by hosts when reviewing reservation requests.
      */
     long countByGuestIdAndStatus(UUID guestId, ReservationStatus status);
+
+    /**
+     * Count active reservations for a guest (PENDING or APPROVED with endDate >= today).
+     * Used to check if guest account can be deleted.
+     */
+    @Query("""
+            SELECT COUNT(r) FROM Reservation r
+            WHERE r.guestId = :guestId
+            AND r.status IN ('PENDING', 'APPROVED')
+            AND r.endDate >= :today
+            """)
+    long countActiveReservationsForGuest(
+            @Param("guestId") UUID guestId,
+            @Param("today") LocalDate today
+    );
+
+    /**
+     * Count active reservations for a host (PENDING or APPROVED with endDate >= today).
+     * Used to check if host account can be deleted.
+     */
+    @Query("""
+            SELECT COUNT(r) FROM Reservation r
+            WHERE r.hostId = :hostId
+            AND r.status IN ('PENDING', 'APPROVED')
+            AND r.endDate >= :today
+            """)
+    long countActiveReservationsForHost(
+            @Param("hostId") UUID hostId,
+            @Param("today") LocalDate today
+    );
 }
