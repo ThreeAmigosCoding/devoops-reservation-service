@@ -91,4 +91,38 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
             @Param("hostId") UUID hostId,
             @Param("today") LocalDate today
     );
+
+    /**
+     * Count completed stays (APPROVED, end date in past) for a guest at a specific accommodation.
+     * Used for rating eligibility checks.
+     */
+    @Query("""
+            SELECT COUNT(r) FROM Reservation r
+            WHERE r.guestId = :guestId
+            AND r.accommodationId = :accommodationId
+            AND r.status = 'APPROVED'
+            AND r.endDate < :today
+            """)
+    long countCompletedStaysAtAccommodation(
+            @Param("guestId") UUID guestId,
+            @Param("accommodationId") UUID accommodationId,
+            @Param("today") LocalDate today
+    );
+
+    /**
+     * Count completed stays (APPROVED, end date in past) for a guest with a specific host.
+     * Used for rating eligibility checks.
+     */
+    @Query("""
+            SELECT COUNT(r) FROM Reservation r
+            WHERE r.guestId = :guestId
+            AND r.hostId = :hostId
+            AND r.status = 'APPROVED'
+            AND r.endDate < :today
+            """)
+    long countCompletedStaysWithHost(
+            @Param("guestId") UUID guestId,
+            @Param("hostId") UUID hostId,
+            @Param("today") LocalDate today
+    );
 }
