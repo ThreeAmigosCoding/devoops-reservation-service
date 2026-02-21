@@ -9,6 +9,7 @@ service ReservationInternalService {
   rpc CheckReservationsExist(CheckReservationsExistRequest) returns (CheckReservationsExistResponse);
   rpc CheckGuestCanBeDeleted(CheckGuestDeletionRequest) returns (CheckDeletionResponse);
   rpc CheckHostCanBeDeleted(CheckHostDeletionRequest) returns (CheckDeletionResponse);
+  rpc CheckRatingEligibility(CheckRatingEligibilityRequest) returns (CheckRatingEligibilityResponse);
 }
 
 message CheckReservationsExistRequest {
@@ -33,4 +34,15 @@ message CheckDeletionResponse {
   bool can_be_deleted = 1;
   string reason = 2;
   int32 active_reservation_count = 3;
+}
+
+message CheckRatingEligibilityRequest {
+  string guest_id   = 1;
+  string target_id  = 2;
+  string target_type = 3;
+}
+
+message CheckRatingEligibilityResponse {
+  bool eligible = 1;
+  string reason  = 2;
 }

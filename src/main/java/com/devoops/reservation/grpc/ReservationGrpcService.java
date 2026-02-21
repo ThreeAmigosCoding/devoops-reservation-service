@@ -89,4 +89,27 @@ public class ReservationGrpcService extends ReservationInternalServiceGrpc.Reser
         responseObserver.onNext(responseBuilder.build());
         responseObserver.onCompleted();
     }
+
+    @Override
+    public void checkRatingEligibility(CheckRatingEligibilityRequest request,
+                                       StreamObserver<CheckRatingEligibilityResponse> responseObserver) {
+        UUID guestId = UUID.fromString(request.getGuestId());
+        UUID targetId = UUID.fromString(request.getTargetId());
+        LocalDate today = LocalDate.now();
+
+        log.debug("gRPC: Checking rating eligibility for guest {} targeting {} (type={})",
+                guestId, targetId, request.getTargetType());
+
+        long count = "HOST".equals(request.getTargetType())
+                ? reservationRepository.countCompletedStaysWithHost(guestId, targetId, today)
+                : reservationRepository.countCompletedStaysAtAccommodation(guestId, targetId, today);
+
+        CheckRatingEligibilityResponse response = CheckRatingEligibilityResponse.newBuilder()
+                .setEligible(count > 0)
+                .setReason(count == 0 ? "No completed past stays found" : "")
+                .build();
+
+        responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
 }
