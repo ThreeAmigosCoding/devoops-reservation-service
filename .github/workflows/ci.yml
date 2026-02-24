@@ -53,15 +53,6 @@ jobs:
           name: build-artifact
           path: build/libs
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
-        with:
-          username: ${{ env.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Generate version tag
         id: version
         run: |
@@ -77,13 +68,19 @@ jobs:
           echo "tag=$VERSION_TAG" >> $GITHUB_OUTPUT
           echo "Generated version tag: $VERSION_TAG"
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ env.DOCKERHUB_USERNAME }}/devoops-reservation-service:${{ steps.version.outputs.tag }}
-            ${{ env.DOCKERHUB_USERNAME }}/devoops-reservation-service:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Build and push Docker image with Kaniko
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/kaniko/.docker
+          echo "{\"auths\":{\"https://index.docker.io/v1/\":{\"auth\":\"$(echo -n ${{ env.DOCKERHUB_USERNAME }}:${DOCKERHUB_TOKEN} | base64)\"}}}" > /tmp/kaniko/.docker/config.json
+          docker run \
+            -v ${{ github.workspace }}:/workspace \
+            -v /tmp/kaniko/.docker:/kaniko/.docker \
+            gcr.io/kaniko-project/executor:latest \
+            --context=/workspace \
+            --dockerfile=/workspace/Dockerfile \
+            --destination=${{ env.DOCKERHUB_USERNAME }}/devoops-reservation-service:${{ steps.version.outputs.tag }} \
+            --destination=${{ env.DOCKERHUB_USERNAME }}/devoops-reservation-service:latest \
+            --cache=true \
+            --cache-repo=${{ env.DOCKERHUB_USERNAME }}/devoops-reservation-service-cache
